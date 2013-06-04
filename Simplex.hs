@@ -9,55 +9,64 @@ import Foreign.Storable
 import HMatrixUtil
 import MyTrace
 
-data SimplexTask = SimplexTask (Matrix Double) (Vector Double)
+data SimplexTask = SimplexTask (Matrix Double)
 
 defaultDecimalPlaces :: Int
 defaultDecimalPlaces = 2
 defaultVecdisp = vecdisp (dispf defaultDecimalPlaces)
 
-instance Show SimplexTask where
-	show (SimplexTask constraints zString) = 
-		"Constraints: "
-		++ dispf defaultDecimalPlaces constraints
-		++ "ZString: \n"
-		++ defaultVecdisp zString
+class HasZString t where
+	getZString:: t -> Vector Double
+	
+instance HasZString SimplexTask where
+	getZString (SimplexTask theMatrix) = getRow (rows theMatrix - 1) theMatrix
 
+instance Show SimplexTask where
+	show (SimplexTask theMatrix) = 
+		dispf defaultDecimalPlaces theMatrix
+		
+class HasConstraints t where
+	getConstraints :: t -> Matrix Double
+	
+instance HasConstraints SimplexTask where
+	getConstraints (SimplexTask theMatrix) = takeRows (rows theMatrix - 2) theMatrix
+		
 sampleTasks = 
 	[
 		(SimplexTask
 			(
-				(4 >< 7)
+				(5 >< 7)
 				[
 					 6, 4, 1, 0, 0, 0,  24,
 					 1, 2, 0, 1, 0, 0,  6,
 					-1, 1, 0, 0, 1, 0,  1,
-					 0, 1, 0, 0, 0, 1,  2
+					 0, 1, 0, 0, 0, 1,  2,
+					 -5, -4, 0, 0, 0, 0, 0::Double
 				]
-			)
-			(
-				7 |> [-5, -4, 0, 0, 0, 0, 0]
 			)
 		)
 	]
 
 --this function returns column index
 getInclusiveVariable :: SimplexTask -> Int
-getInclusiveVariable (SimplexTask constraints zString) =
+getInclusiveVariable task =
 	resultIndex
 	where
-		index = searchVector zString vectorChooseMin
+		index = searchVectorS zString vectorChooseMin
 		value = zString @> index
+		zString = getZString task
 		resultIndex = 
-			if
+			if 
 				value < 0
 			then
 				index
 			else
 				-1
+				
 
 --this function returns row index
 getExclusiveVariable :: SimplexTask -> Int -> Int
-getExclusiveVariable (SimplexTask constraints zString) inclusiveVariableIndex =
+getExclusiveVariable task inclusiveVariableIndex =
 	resultIndex
 	where
 		traceEnabled = False
@@ -75,6 +84,7 @@ getExclusiveVariable (SimplexTask constraints zString) inclusiveVariableIndex =
 				bestRatio			
 			else
 				-1
+		constraints = getConstraints task
 		inclusiveVariableColumn = getColumn inclusiveVariableIndex constraints
 		rightColumn = getColumn (cols constraints - 1) constraints
 		ratioColumn = 
@@ -100,13 +110,47 @@ getExclusiveVariable (SimplexTask constraints zString) inclusiveVariableIndex =
 			| (a <= 0) && (b > 0) = 1
 			| (a < 0) && (b < 0) = -1
 
+simplexIterationLimit = 3
+
 simplex :: SimplexTask -> Vector Double
-simplex task@(SimplexTask constraints zString) =
-	zString
+simplex = simplexIterate simplexIterationLimit
+
+simplexIterate :: Int -> SimplexTask -> Vector Double
+simplexIterate iterationsLeft task@(SimplexTask theMatrix)
+	| iterationsLeft <= 0 = getZString task
+	| otherwise = 
+		trace
+			(
+				"Next iteration of the simplex method: task:\n"
+				++
+				show task
+			)
+			(
+				if 
+					inclusiveVariableIndex == -1 --last iteraion
+				then
+					getZString task
+				else
+					simplexIterate (iterationsLeft - 1) nextTask
+			)
+	where
+		inclusiveVariableIndex = getInclusiveVariable task -- column
+		exclusiveVariableIndex = getExclusiveVariable task inclusiveVariableIndex -- row
+		inclusiveValue = theMatrix @@> (exclusiveVariableIndex, inclusiveVariableIndex)
+		nextTask = (SimplexTask newMatrix)
+		newMatrix = buildMatrix (rows theMatrix) (cols theMatrix) createNewConstraints
+		createNewConstraints (rowIndex, columnIndex) = 
+			if 
+				rowIndex == exclusiveVariableIndex
+			then
+				currentValue / inclusiveValue
+			else
+				currentValue - currentValueAtExclusiveString * currentValueAtIndlusiveColumn
+			where
+				currentValue = theMatrix @@> (rowIndex, columnIndex)
+				currentValueAtExclusiveString = theMatrix @@> (exclusiveVariableIndex, columnIndex)
+				currentValueAtIndlusiveColumn = theMatrix @@> (rowIndex, inclusiveVariableIndex)
 	
 evaluate :: Vector Double -> Vector Double -> Double
 evaluate function arguments = function <.> arguments
-	
-findInclusiveVariable :: Vector t -> Int
-findInclusiveVariable target =
-	0
+
