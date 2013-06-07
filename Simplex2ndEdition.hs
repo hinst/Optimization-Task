@@ -8,6 +8,7 @@ import qualified Data.Vector as V
 import Data.Ratio
 import Data.Maybe
 import MyTrace
+import VectorUtil
 
 type Matrix elementType = M.Matrix elementType
 submatrix = M.submatrix
@@ -22,6 +23,27 @@ type Element = Rational
 
 -- first is plain number, second is M*number
 data MElement = MElement Element Element deriving (Eq)
+
+class HasSign t where
+	getSign :: t -> Int
+	
+	-- additional functions below
+	isPositive :: t -> Bool
+	isPositive x = getSign x == 1
+	
+	isZero :: t -> Bool
+	isZero x = getSign x == 0
+	
+	isNegative :: t -> Bool
+	isNegative x = getSign x == -1
+	
+instance HasSign MElement where
+	getSign (MElement value mValue)
+		| (mValue > 0) = 1
+		| (mValue < 0) = -1
+		| (value > 0) && (mValue == 0) = 1
+		| (value < 0) && (mValue == 0) = -1
+		| (value == 0) && (mValue == 0) = 0
 
 defaultShowRational :: Rational -> String
 defaultShowRational x
@@ -115,7 +137,7 @@ getTaskMatrixFromElementLists lists =
 sampleTasks :: [Task]
 sampleTasks = 
 	[
-		(Task
+		(Task -- Homework task
 			(getTaskMatrixFromElementLists
 				[
 					[3, 2, -1, 0, 5],
@@ -124,7 +146,20 @@ sampleTasks =
 				]
 			)
 			Minimize
+		),
+		(Task -- Reddy Mikks task from book @ page 107, the answer is @ page 111
+			(getTaskMatrixFromElementLists
+				[
+					[6, 4, 1, 0, 0, 0, 24],
+					[1, 2, 0, 1, 0, 0, 6],
+					[-1, 1, 0, 0, 1, 0, 1],
+					[0, 1, 0, 0, 0, 1, 2],
+					[-5, -4, 0, 0, 0, 0, 0]
+				]
+			)
+			Maximize
 		)
+
 	]
 
 -- each value in the result vector corresponds to a row. False means that this row needs a fictional variable
@@ -156,7 +191,7 @@ evaluateSimplexInitialSolution task =
 									currentIsPositive 
 									&& 
 									currentIsNotAConstraint
-								currentIsNonTarget = (targetVector V.! i) == (MElement 0 0)
+								currentIsNonTarget = isZero (targetVector V.! i)
 								currentIsPositive = ((row V.! i) > 0)
 								currentIsNotAConstraint = i < (rowLength - 1)
 						
@@ -267,5 +302,47 @@ ensureFictionalVariables task@(Task matrix direction) =
 								0
 							where
 								(MElement value _) = matrix M.! (i, columnIndex)
-								
-			
+
+simplexChooseColumn :: Task -> Int
+simplexChooseColumn task@(Task matrix direction) = 
+	result
+	where
+		(getIndex, checkValue) = 
+			case direction of
+				Minimize -> (V.maxIndex, isPositive) -- && > 0
+				Maximize -> (V.minIndex, isNegative) -- && < 0
+		targetVector = getTargetVector task
+		index = getIndex (V.take (V.length targetVector - 1) targetVector)
+		 -- one should not take the last element because it does not correspond to a variable
+		value = targetVector V.! index
+		result = 
+			if 
+				checkValue value
+			then
+				index
+			else
+				-1
+
+-- requires column index
+simplexChooseRow :: Task -> Int -> Int
+simplexChooseRow task chosenColumnIndex =
+	0
+	where
+		matrix = getConstraints task
+		ratios = V.generate (nrows matrix) generateRatio
+		generateRatio index =
+			if 
+				0 == cccv
+			then
+				-1
+			else
+				crcv / cccv
+			where
+				-- cccv means current chosen column value
+				cccv = matrix M.! (index, chosenColumnIndex)
+				-- crcv means current right column value
+				crcv = matrix M.! (index, ncols matrix)
+
+simplexPhaseForward :: Task -> Task
+simplexPhaseForward task = 
+	task
