@@ -137,25 +137,25 @@ simplexIterate :: Int -> SimplexTask -> Vector SimplexTaskElement
 simplexIterate iterationsLeft task@(SimplexTask theMatrix)
 	| iterationsLeft <= 0 = 
 		trace
-			"Iteration limit reached. Exiting."
-			(getZString task)
+		"Iteration limit reached. Exiting."
+		(getZString task)
 	| otherwise = 
 		trace
-			(
-				"Next iteration of the simplex method: task:\n"
-				++
-				show task
-			)
-			(
-				if 
-					inclusiveVariableIndex == -1 --last iteraion
-				then
-					trace
-						"Solution found. Exiting."
-						(getZString task)
-				else
-					simplexIterate (iterationsLeft - 1) nextTask
-			)
+		(
+			"Next iteration of the simplex method: task:\n"
+			++
+			show task
+		)
+		(
+			if 
+				inclusiveVariableIndex == -1 --last iteraion
+			then
+				trace
+				"Solution found. Exiting."
+				(getZString task)
+			else
+				simplexIterate (iterationsLeft - 1) nextTask
+		)
 	where
 		inclusiveVariableIndex = getInclusiveVariable task -- column
 		exclusiveVariableIndex = getExclusiveVariable task inclusiveVariableIndex -- row
@@ -165,7 +165,7 @@ simplexIterate iterationsLeft task@(SimplexTask theMatrix)
 		getNewExclusiveStringValue columnIndex = 
 			theMatrix @@> (exclusiveVariableIndex, columnIndex) / inclusiveValue
 		newMatrix = buildMatrix (rows theMatrix) (cols theMatrix) getNewTaskMatrixValue
-		getNewTaskMatrixValue (rowIndex, columnIndex) = 
+		getNewTaskMatrixValue (rowIndex, columnIndex) =
 			if 
 				rowIndex == exclusiveVariableIndex
 			then
@@ -179,4 +179,25 @@ simplexIterate iterationsLeft task@(SimplexTask theMatrix)
 	
 evaluate :: Vector SimplexTaskElement -> Vector SimplexTaskElement -> SimplexTaskElement
 evaluate function arguments = function <.> arguments
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

@@ -18,6 +18,7 @@ getRow = M.getRow
 getCol = M.getCol
 fromLists = M.fromLists
 type Vector elementType = V.Vector elementType
+vectorContains = V.elem
 
 type Element = Rational
 
@@ -53,6 +54,12 @@ defaultShowRational x
 	where
 		multiplier = numerator x
 		divisor = denominator x
+
+divideMElementByRational melement x =
+	multiplyMElementByRational melement (1/x)
+	
+multiplyMElementByRational (MElement value mValue) x =
+	(MElement (value * x) (mValue * x))
 	
 instance Show MElement where
 	show (MElement value mValue) = 
@@ -158,9 +165,71 @@ sampleTasks =
 				]
 			)
 			Maximize
+		),
+		(Task (getTaskMatrixFromElementLists (fst task3322 ++ (snd task3322 !! 0)))	Maximize), -- !! 2
+		(Task (getTaskMatrixFromElementLists (fst task3322 ++ (snd task3322 !! 1)))	Maximize),
+		(Task (getTaskMatrixFromElementLists (fst task3322 ++ (snd task3322 !! 2)))	Maximize),
+		(Task (getTaskMatrixFromElementLists (fst task3322 ++ (snd task3322 !! 3)))	Minimize),
+		(Task (getTaskMatrixFromElementLists (fst task3322 ++ (snd task3322 !! 4)))	Minimize) -- !! 6
+		,
+		(Task -- !! 7th task
+			(getTaskMatrixFromElementLists 
+				(
+					[(fst task3414 !! 0)] ++
+					[(fst task3414 !! 2)] ++
+					[(fst task3414 !! 3)] ++
+					[(snd task3414 !! 0)]
+				)
+			)
+			Maximize
 		)
-
+		,
+		(Task -- !! 8th task
+			(getTaskMatrixFromElementLists 
+				(
+					[(fst task3414 !! 0)] ++
+					[(fst task3414 !! 1)] ++
+					[(fst task3414 !! 3)] ++
+					[(fst task3414 !! 4)] ++
+					[(snd task3414 !! 1)]
+				)
+			)
+			Maximize
+		)			
 	]
+	
+changeListSign list = map (\x -> -x) list
+
+task3322 =
+	(
+		[ -- constraints
+			[1, 2, -2, 4, 1, 0, 0, 40],
+			[2, -1, 1, 2, 0, 1, 0, 8],
+			[4, -2, 1, -1, 0, 0, 1, 10]
+		],
+		[ -- targets
+			[changeListSign [2, 1, -3, 5, 0, 0, 0, 0]], -- maximize
+			[changeListSign [8, 6, 3, -2, 0, 0, 0, 0]], -- maximize
+			[changeListSign [3, -1, 3, 4, 0, 0, 0, 0]], -- max
+			[changeListSign [5, -4, 6, -8, 0, 0, 0, 0]], -- minimize
+			[changeListSign [-4, 6, -2, 4, 0, 0, 0, 0]] -- min
+		]
+	)
+		
+task3414 =
+	(
+		[
+			[-2, 3, 0, 0, 0, 0, 3],
+			[4, 5, -1, 0, 0, 0, 10],
+			[1, 2, 0, 1, 0, 0, 5],
+			[6, 7, 0, 0, 1, 0, 3],
+			[4, 8, 0, 0, 0, -1, 5]
+		],
+		[
+			changeListSign [5, 6, 0, 0, 0, 0, 0], -- with 1, 3, 4 // 0, 2 ,3 -- maximize
+			changeListSign [2, -7, 0, 0, 0, 0, 0] -- 1, 2, 4, 5 // 0, 1, 3, 4
+		]
+	)
 
 -- each value in the result vector corresponds to a row. False means that this row needs a fictional variable
 evaluateSimplexInitialSolution :: Task -> Vector Bool
@@ -186,16 +255,33 @@ evaluateSimplexInitialSolution task =
 								False
 							where
 								currentResult = 
-									currentIsNonTarget 
+									(variableIsNonTarget i)
 									&& 
 									currentIsPositive 
 									&& 
-									currentIsNotAConstraint
+									(variableIsNotAConstraint i)
 								currentIsNonTarget = isZero (targetVector V.! i)
 								currentIsPositive = ((row V.! i) > 0)
-								currentIsNotAConstraint = i < (rowLength - 1)
-						
-						
+				hasNoNegativeNonTargetVariables = 
+					go 0
+					where
+						go i =
+							if 
+								i < rowLength
+							then
+								currentResult && (go (i + 1))
+							else
+								True
+							where
+								currentResult = 
+									currentIsPositive 
+									||
+									(variableIsNonTarget i)
+									||
+									(variableIsNotAConstraint i)
+								currentIsPositive = ((row V.! i) >= 0)
+				variableIsNonTarget index = isZero (targetVector V.! index)
+				variableIsNotAConstraint index = index < (rowLength - 1)
 		constraints = getConstraints task
 		targetVector = getTargetVector task
 		
@@ -263,6 +349,11 @@ ensureFictionalVariables task@(Task matrix direction) =
 			if
 				isJust block
 			then
+				trace
+				(
+					"Simplex matrix without fictional variables:\n"
+					++ show matrix
+				)
 				(Task (performFictionalCorrection newMatrix) direction)
 			else
 				task
@@ -289,7 +380,9 @@ ensureFictionalVariables task@(Task matrix direction) =
 					| otherwise = MElement value correctedMValue
 					where
 						correctedMValue = 
-							mValue + upperResult
+							case direction of
+								Minimize ->	mValue + upperResult
+								Maximize -> mValue - upperResult
 							where
 								upperResult = (upperVSum (rowIndex - 1))
 						current@(MElement value mValue) = matrix M.! index
@@ -297,12 +390,24 @@ ensureFictionalVariables task@(Task matrix direction) =
 							if 
 								i > 0
 							then
-								value + upperVSum (i - 1)
+								(
+									case 
+										vectorContains 
+										(MElement 1 0) 
+										(getRow i (fromJust block)) 
+									of
+										True -> value
+										False -> 0
+								)
+								+ 
+								upperVSum (i - 1)
 							else
 								0
 							where
 								(MElement value _) = matrix M.! (i, columnIndex)
 
+-- returns zero-based index
+-- -1 means no column
 simplexChooseColumn :: Task -> Int
 simplexChooseColumn task@(Task matrix direction) = 
 	result
@@ -326,23 +431,162 @@ simplexChooseColumn task@(Task matrix direction) =
 -- requires column index
 simplexChooseRow :: Task -> Int -> Int
 simplexChooseRow task chosenColumnIndex =
-	0
+	searchVector 
+	(
+		traceif
+		False
+		("searching: " ++ show ratios)
+		ratios
+	)
+	searchRow
 	where
 		matrix = getConstraints task
-		ratios = V.generate (nrows matrix) generateRatio
+		ratios = 
+			traceif 
+				False 
+				("ratios: " ++ show result)
+				result
+			where
+				result = V.generate (nrows matrix) generateRatio
 		generateRatio index =
-			if 
-				0 == cccv
-			then
-				-1
-			else
-				crcv / cccv
+			traceif
+			False
+			("generateRatio " ++ show index)
+			(
+				if 
+					0 == cccv
+				then
+					-1
+				else
+					traceif
+					False
+					(defaultShowRational crcv ++ " / " ++defaultShowRational cccv)
+					(crcv / cccv)
+			)
 			where
 				-- cccv means current chosen column value
-				cccv = matrix M.! (index, chosenColumnIndex)
+				cccv = 
+					traceif
+						False
+						(
+							"cccv " 
+							++
+							show index
+							++ " " ++
+							show chosenColumnIndex
+							++ "\n" ++
+							show matrix
+						)
+						(matrix M.! (index + 1, chosenColumnIndex + 1))
 				-- crcv means current right column value
-				crcv = matrix M.! (index, ncols matrix)
+				crcv = 
+					traceif 
+						False
+						"crcv" 
+						(matrix M.! (index + 1, ncols matrix))
+		searchRow a b
+			| (a > 0) && (b > 0) = vectorChooseMin a b
+			| (a > 0) && (b <= 0) = 0
+			| (a <= 0) && (b > 0) = 1
+			| (a <= 0) && (b <= 0) = -1
 
-simplexPhaseForward :: Task -> Task
-simplexPhaseForward task = 
-	task
+simplexModifyTask :: Task -> Int -> Int -> Task
+simplexModifyTask task@(Task matrix direction) rowIndex columnIndex =
+	Task
+	(M.matrix (nrows matrix) (ncols matrix) buildResult)
+	direction
+	where
+		(MElement chosenValue _) = matrix M.! (rowIndex, columnIndex)
+		newChosenRow = V.map newChosenRowM (getRow rowIndex matrix) 
+		newChosenRowM x = divideMElementByRational x chosenValue
+		buildResult (y, x) =
+			if 
+				y == rowIndex
+			then
+				valueAtChosenRow
+			else
+				transformedValue
+			where
+				value = matrix M.! (y, x)
+				valueAtChosenRow = newChosenRow V.! (x - 1)
+				valueAtChosenColumn = matrix M.! (y, columnIndex)
+				transformedValue = transformValue value valueAtChosenRow valueAtChosenColumn
+				transformValue
+					(MElement value mValue) 
+					(MElement rowValue _) 
+					(MElement columnValue columnMValue)
+					=
+					MElement 
+					(value - rowValue * columnValue)
+					(mValue - rowValue * columnMValue)
+
+iterationLimit = 100
+
+simplexIterate :: Int -> Task -> Task
+simplexIterate iterationNumber task
+	| (columnIndex == -1) || (rowIndex == -1) =
+		traceif
+		True
+		(
+			showInfo 
+			(
+				"[ Last iteration: "
+				++
+				(
+					if
+						columnIndex == -1
+					then
+						"task solved"
+					else
+						"task can not be solved"
+				)
+				++
+				" ]"
+			)
+		)
+		task
+	| (iterationNumber > iterationLimit) =
+		traceif
+		True
+		(showInfo "[ Iteration limit exceeded ]")
+		task
+	| otherwise =
+		traceif
+		True
+		(showInfo "[:|||:]")
+		(
+			simplexIterate
+			(iterationNumber + 1)
+			(simplexModifyTask task rowIndexM columnIndexM)
+		)
+	where
+		showInfo text =
+			text ++ " #" ++ show iterationNumber ++ "; " ++ showChosenIndexInfo
+			++ "\n" ++ show (getMatrix task)
+		showChosenIndexInfo =
+			"row: " 
+			++
+			(
+				if 
+					columnIndex /= -1 
+				then
+					show rowIndexM
+				else
+				"no_row"
+			)
+			++ ", column: " ++ show columnIndexM
+		columnIndex = simplexChooseColumn task
+		rowIndex = simplexChooseRow task columnIndex
+		rowIndexM = 
+			traceif 
+			False
+			(show rowIndex)
+			(rowIndex + 1)
+		columnIndexM = columnIndex + 1
+
+simplex :: Task -> Task
+simplex task = 
+	simplexIterate 0
+	fvTask
+	where
+		fvTask = (ensureFictionalVariables task)
